@@ -155,7 +155,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-tags: true
-      - name: Get soundpack
       - name: Install dependencies (windows msvc) (0/4)
         if: runner.os == 'Windows'
         uses: lukka/get-cmake@latest
