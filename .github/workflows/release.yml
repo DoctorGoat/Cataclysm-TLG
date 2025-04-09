@@ -8,7 +8,6 @@ on:
       - '.github/workflows/release.yml'
       - 'android/**'
       - 'build-data/**'
-      - 'build-scripts/generate-release-notes.js'
       - 'cataclysm-launcher'
       - 'data/**'
       - 'doc/**'
@@ -41,14 +40,7 @@ jobs:
         run: |
           echo "tag_name=ctlg-experimental-${{ steps.get-timestamp.outputs.time }}" >> $GITHUB_OUTPUT
           echo "release_name=Cataclysm-DDA experimental build ${{ steps.get-timestamp.outputs.time }}" >> $GITHUB_OUTPUT
-      - uses: actions/checkout@v4
-      - name: Generate Release Notes
-        id: generate-release-notes
-        run: |
-          npm install @actions/github
-          node build-scripts/generate-release-notes.js '${{ secrets.GITHUB_TOKEN }}' '${{ steps.generate_env_vars.outputs.tag_name }}' "$(git log -1 --format='%H')" > notes.txt
-      - run: |
-          gh release create ${{ steps.generate_env_vars.outputs.tag_name }} --notes-file notes.txt --prerelease --title "${{ steps.generate_env_vars.outputs.release_name }}" --target "$(git log -1 --format='%H')"
+      - uses: actions/checkout@v4     
   builds:
     needs: release
     strategy:
