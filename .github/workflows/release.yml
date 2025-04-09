@@ -1,26 +1,28 @@
 name: "Experimental Release"
 concurrency: release
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/release.yml'
+      - 'android/**'
+      - 'build-data/**'
+      - 'build-scripts/generate-release-notes.js'
+      - 'cataclysm-launcher'
+      - 'data/**'
+      - 'doc/**'
+      - 'gfx/**'
+      - 'lang/po/*.po'
+      - 'LICENSE*'
+      - 'Makefile'
+      - 'README*'
+      - 'src/**'
   workflow_dispatch:
-#  push:
-#    branches:
-#      - master
-#    paths:
-#      - '.github/workflows/release.yml'
-#      - 'android/**'
-#      - 'build-data/**'
-#      - 'cataclysm-launcher'
-#      - 'data/**'
-#      - 'doc/**'
-#      - 'gfx/**'
-#      - 'lang/po/*.po'
-#      - 'LICENSE*'
-#      - 'Makefile'
-#      - 'README*'
-#      - 'src/**'
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  REPOSITORY_NAME: ${{ github.event.repository.name }}
 
 jobs:
   release:
@@ -29,7 +31,6 @@ jobs:
     permissions: write-all
     outputs:
       timestamp: ${{ steps.get-timestamp.outputs.time }}
-      tag_name: ${{ steps.generate_env_vars.outputs.tag_name }}
     steps:
       - name: Get build timestamp
         id: get-timestamp
@@ -38,12 +39,16 @@ jobs:
       - name: Generate environmental variables
         id: generate_env_vars
         run: |
-          echo "tag_name=cataclysm-tlg-1.0-${{ steps.get-timestamp.outputs.time }}" >> $GITHUB_OUTPUT
-          echo "release_name=Cataclysm-TLG 1.0 ${{ steps.get-timestamp.outputs.time }}" >> $GITHUB_OUTPUT
+          echo "tag_name=ctlg-experimental-${{ steps.get-timestamp.outputs.time }}" >> $GITHUB_OUTPUT
+          echo "release_name=Cataclysm-DDA experimental build ${{ steps.get-timestamp.outputs.time }}" >> $GITHUB_OUTPUT
       - uses: actions/checkout@v4
+      - name: Generate Release Notes
+        id: generate-release-notes
+        run: |
+          npm install @actions/github
+          node build-scripts/generate-release-notes.js '${{ secrets.GITHUB_TOKEN }}' '${{ steps.generate_env_vars.outputs.tag_name }}' "$(git log -1 --format='%H')" > notes.txt
       - run: |
-          gh release create ${{ steps.generate_env_vars.outputs.tag_name }} --generate-notes --prerelease --title "${{ steps.generate_env_vars.outputs.release_name }}" --target "$(git log -1 --format='%H')"
-
+          gh release create ${{ steps.generate_env_vars.outputs.tag_name }} --notes-file notes.txt --prerelease --title "${{ steps.generate_env_vars.outputs.release_name }}" --target "$(git log -1 --format='%H')"
   builds:
     needs: release
     strategy:
@@ -51,7 +56,7 @@ jobs:
       matrix:
         include:
           - name: Windows Tiles x64 MSVC
-            artifact: windows-tiles-x64-msvc
+            artifact: windows-with-graphics-x64
             arch: x64
             os: windows-2019
             mxe: none
@@ -59,26 +64,10 @@ jobs:
             content: application/zip
             sound: 0
           - name: Windows Tiles Sounds x64 MSVC
-            artifact: windows-tiles-sounds-x64-msvc
+            artifact: windows-with-graphics-and-sounds-x64
             arch: x64
             os: windows-2019
             mxe: none
-            ext: zip
-            content: application/zip
-            sound: 1
-          - name: Windows Tiles x64
-            mxe: x86_64
-            libbacktrace: 1
-            artifact: windows-tiles-x64
-            os: ubuntu-latest
-            ext: zip
-            content: application/zip
-            sound: 0
-          - name: Windows Tiles Sounds x64
-            mxe: x86_64
-            libbacktrace: 1
-            artifact: windows-tiles-sounds-x64
-            os: ubuntu-latest
             ext: zip
             content: application/zip
             sound: 1
@@ -89,7 +78,7 @@ jobs:
             libbacktrace: 1
             tiles: 1
             sound: 0
-            artifact: linux-tiles-x64
+            artifact: linux-with-graphics-x64
             ext: tar.gz
             content: application/gzip
           - name: Linux Tiles Sounds x64
@@ -99,7 +88,7 @@ jobs:
             libbacktrace: 1
             tiles: 1
             sound: 1
-            artifact: linux-tiles-sounds-x64
+            artifact: linux-with-graphics-and-sounds-x64
             ext: tar.gz
             content: application/gzip
           - name: Linux Curses x64
@@ -109,7 +98,7 @@ jobs:
             libbacktrace: 1
             tiles: 0
             sound: 0
-            artifact: linux-curses-x64
+            artifact: linux-terminal-only-x64
             ext: tar.gz
             content: application/gzip
           - name: macOS Curses Universal Binary (x64 and arm64)
@@ -117,7 +106,7 @@ jobs:
             mxe: none
             tiles: 0
             sound: 0
-            artifact: osx-curses-universal
+            artifact: osx-terminal-only-universal
             ext: dmg
             content: application/x-apple-diskimage
           - name: macOS Tiles Universal Binary (x64 and arm64)
@@ -125,7 +114,7 @@ jobs:
             mxe: none
             tiles: 1
             sound: 0
-            artifact: osx-tiles-universal
+            artifact: osx-with-graphics-universal
             ext: dmg
             content: application/x-apple-diskimage
           - name: Android x64
@@ -164,14 +153,15 @@ jobs:
         ZSTD_CLEVEL: 17
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-tags: true
       - name: Get soundpack
-        if: matrix.sound == 1
-        run: |
-          git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/Cataclysm-TLG/CTLG-Soundpacks '${{ github.workspace }}/CTLG-Soundpacks'
-          mv '${{ github.workspace }}/CTLG-Soundpacks/sound/CC-Sounds' '${{ github.workspace }}/data/sound'
       - name: Install dependencies (windows msvc) (0/4)
         if: runner.os == 'Windows'
         uses: lukka/get-cmake@latest
+        with:
+          # 4.0.0 has issues compiling old packages in vcpkg
+          cmakeVersion: 3.31.6
       - name: Install dependencies (windows msvc) (1/4)
         if: runner.os == 'Windows'
         uses: microsoft/setup-msbuild@v2
@@ -268,36 +258,36 @@ jobs:
           make -j$((`nproc`+0))
           cp LICENSE ${{ github.workspace }}/LICENSE-libbacktrace.txt
           sudo make install
-      - name: Build CTLG (linux)
+      - name: Build ctlg (linux)
         if: runner.os == 'Linux' && matrix.mxe == 'none' && matrix.android == 'none' && !matrix.wasm
         run: |
           make -j$((`nproc`+0)) TILES=${{ matrix.tiles }} SOUND=${{ matrix.tiles }} RELEASE=1 LOCALIZE=1 LANGUAGES=all BACKTRACE=1 LIBBACKTRACE=${{ matrix.libbacktrace }} PCH=0 bindist
-          mv cataclysm-tlg-1.0.tar.gz ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.tar.gz
-      - name: Build Ctlg (WebAssembly)
-        if: matrix.wasm
+          mv cataclysmdda-0.I.tar.gz ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.tar.gz
+      - name: Build ctlg (WebAssembly)
+        if: matrix.wasm && success()
         run: |
           ./build-scripts/build-emscripten.sh
           ./build-scripts/prepare-web.sh
           (cd build && zip ../ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.${{ matrix.ext }} *)
-      - name: Build CTLG (windows mxe)
+      - name: Build ctlg (windows mxe)
         if: matrix.mxe != 'none'
         env:
           PLATFORM: /opt/mxe/usr/bin/${{ matrix.mxe }}-w64-mingw32.static.gcc12-
         run: |
           make -j$((`nproc`+0)) CROSS="${PLATFORM}" TILES=1 SOUND=1 RELEASE=1 LOCALIZE=1 LANGUAGES=all BACKTRACE=1 LIBBACKTRACE=${{ matrix.libbacktrace }} PCH=0 bindist
-          mv cataclysm-tlg-1.0.zip ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.zip
-      - name: Build Ctlg (windows msvc)
+          mv cataclysmdda-0.I.zip ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.zip
+      - name: Build ctlg (windows msvc)
         if: runner.os == 'Windows'
         env:
           # Enable pretty backtraces
           BACKTRACE: 1
-          Ctlg_RELEASE_BUILD: 1
+          ctlg_RELEASE_BUILD: 1
           VCPKG_OVERLAY_TRIPLETS: ${{ github.workspace }}\.github\vcpkg_triplets
         run: |
           msbuild -m -p:Configuration=Release -p:Platform=${{ matrix.arch }} "-target:Cataclysm-vcpkg-static;JsonFormatter-vcpkg-static" msvc-full-features\Cataclysm-vcpkg-static.sln
           .\build-scripts\windist.ps1
-          mv cataclysm-tlg-1.0.zip ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.zip
-      - name: Build Ctlg (osx)
+          mv cataclysmdda-0.I.zip ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.zip
+      - name: Build ctlg (osx)
         if: runner.os == 'macOS'
         run: |
           make -j3 TILES=${{ matrix.tiles }} SOUND=${{ matrix.tiles }} RELEASE=1 LOCALIZE=1 LANGUAGES=all BACKTRACE=0 PCH=0 USE_HOME_DIR=1 FRAMEWORK=1 UNIVERSAL_BINARY=1 dmgdist
@@ -308,30 +298,21 @@ jobs:
         with:
           java-version: '11'
           distribution: 'adopt'   
-
       - name: Setup Build and Dependencies (android)
         if: runner.os == 'Linux' && matrix.android != 'none' && matrix.mxe == 'none'
         run: |
           sudo apt-get update
           sudo apt-get install gettext          
-
-      - name: Build Ctlg (android)
+      - name: Build ctlg (android)
         if: runner.os == 'Linux' && matrix.android != 'none' && matrix.mxe == 'none'
         working-directory: ./android
         run: |
-          # Set environment variables for NDK compatibility
-          export NDK_VERSION="25.2.9519653" # Set to the required NDK version
-          
-          # Uncomment and configure these if you're using keystore properties files
-          echo "${{ secrets.KEYSTORE }}" > release.keystore.asc
+          echo "${{ secrets.KEYSTORE }}" > release.keystore.asc   
           gpg -d --passphrase "${{ secrets.KEYSTORE_PASSWORD }}" --batch release.keystore.asc > app/release.keystore 
           echo "${{ secrets.KEYSTORE_PROPERTIES }}" > keystore.properties.asc   
           gpg -d --passphrase "${{ secrets.KEYSTORE_PASSWORD }}" --batch keystore.properties.asc > keystore.properties
-          
           export UPSTREAM_BUILD_NUMBER="$((11581 + ${{ github.run_number }}))"
           chmod +x gradlew
-          
-          # Build Android APK or AAB for different architectures
           if [ ${{ matrix.android }} = arm64 ]
           then
                ./gradlew -Pj=$((`nproc`+0)) -Pabi_arm_32=false assembleExperimentalRelease
@@ -345,6 +326,5 @@ jobs:
                ./gradlew -Pj=$((`nproc`+0)) bundleExperimentalRelease
                mv ./app/build/outputs/bundle/experimentalRelease/*.aab ../ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.aab     
           fi
-
       - run: |
-          gh release upload ${{ needs.release.outputs.tag_name }} ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.${{ matrix.ext }}
+          gh release upload ctlg-experimental-${{ needs.release.outputs.timestamp }} ctlg-${{ matrix.artifact }}-${{ needs.release.outputs.timestamp }}.${{ matrix.ext }}
